@@ -131,7 +131,7 @@ if __name__ == "__main__":
     if in_obj == 4:
         af.movezanticlock(3500)
     elif in_obj == 10:
-        af.movezanticlock(13900)
+        af.movezanticlock(13750)
         sleep(17)
      
     ## 12_july 40X acode added

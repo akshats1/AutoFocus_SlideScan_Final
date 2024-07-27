@@ -32,6 +32,11 @@ class Autofocus:
         self.ser.write(command.encode("utf-8"))
         self.y += steps
         sleep(1)
+    def moveyc(self, steps):
+        command = "yclk,{}".format(steps)
+        self.ser.write(command.encode("utf-8"))
+        self.y -= steps
+        sleep(1)
 
     def movezclock(self, distance):
         command = "zclk,{}".format(distance)
@@ -47,6 +52,19 @@ class Autofocus:
         bg = cv2.GaussianBlur(image, (11, 11), 0)
         v = cv2.Laplacian(bg, cv2.CV_64F).var()
         return v
+    def roixy_4x(self,x,y):
+            self.movexclock(x)
+            sleep(3)
+            self.moveyc(y)
+    def roixy(self,x,y):
+            self.movexclock(x)
+            sleep(8)
+            self.moveyc(y)
+          
+    def init_pos(self,xi,yi):
+            self.movexanticlock(xi)
+            sleep(3)
+            self.movey(yi)
 
     def auto(self, obj_value):
         z_positions = []
@@ -98,6 +116,25 @@ class Autofocus:
             self.movezclock(abs(adjust_steps))
 
         # Capture the final focused image at high resolution
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         self.camera.resolution = (1920, 1088)
         sleep(2)  # Allow time for the camera to adjust
         stream = io.BytesIO()
@@ -123,16 +160,37 @@ class Autofocus:
 if __name__ == "__main__":
     af = Autofocus()
     
+    ##init###
+    #####xcclk=350
+    #####ycclk=150
+    print("Intialization Starting Please Wait......")
+    xi=350
+    yi=200
+    af.init_pos(xi,yi)
+    sleep(5)
     af.movezclock(20000)
     
+    print("Intialization Stops for x,y z in Process")
     print("Please enter the Objective value 4 ,10 or 40")
     in_obj = int(input())
     
     if in_obj == 4:
         af.movezanticlock(3500)
+        ## goto roi
+        sleep(5)
+        x=345
+        y=175
+        
+        af.roixy_4x(x,y)
+        sleep(2)
     elif in_obj == 10:
-        af.movezanticlock(13750)
-        sleep(17)
+        af.movezanticlock(13852)
+        sleep(16)
+        x=345
+        y=175
+        
+        af.roixy(x,y)
+        sleep(4)
      
     ## 12_july 40X acode added
     elif in_obj == 40:

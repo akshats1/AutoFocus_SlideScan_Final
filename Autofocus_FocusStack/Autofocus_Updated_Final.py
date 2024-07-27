@@ -52,7 +52,9 @@ class Autofocus:
         z_positions = []
         variances = []
         max_variance = 0
+        second_max_variance = 0
         max_z = self.z
+        second_max_z = self.z
 
         self.camera.start_preview()
         self.ser.reset_input_buffer()
@@ -61,13 +63,12 @@ class Autofocus:
         self.camera.resolution = (320, 240)
         self.camera.framerate = 24
         
-        if (obj_value ==4):
-                step_size=50
-        elif(obj_value==10):
-                step_size=20
-        elif(obj_value==40):
-                step_size=5
-                
+        if (obj_value == 4):
+                step_size = 50
+        elif (obj_value == 10):
+                step_size = 20
+        elif (obj_value == 40):
+                step_size = 5
 
         for i in range(21):
             stream = io.BytesIO()
@@ -81,8 +82,13 @@ class Autofocus:
             z_positions.append(self.z)
 
             if current_variance > max_variance:
+                second_max_variance = max_variance
+                second_max_z = max_z
                 max_variance = current_variance
                 max_z = self.z
+            elif current_variance > second_max_variance:
+                second_max_variance = current_variance
+                second_max_z = self.z
 
             if i < 20 and current_variance >= max_variance:  # Move motor only if variance keeps improving
                 self.movezclock(step_size)
@@ -90,29 +96,54 @@ class Autofocus:
             else:
                 break  # Stop if variance does not improve
 
-        # Adjust to the position with the maximum variance
+        # Capture the first image at maximum variance position
         adjust_steps = self.z - max_z
         if adjust_steps > 0:
             self.movezanticlock(adjust_steps)
         else:
             self.movezclock(abs(adjust_steps))
-
-        # Capture the final focused image at high resolution
-        self.camera.resolution = (1920, 1088)
-        sleep(2)  # Allow time for the camera to adjust
+        sleep(2)
+        self.camera.resolution = (1920, 1080)
         stream = io.BytesIO()
         self.camera.capture(stream, format='jpeg')
         stream.seek(0)
-        high_res_image = np.frombuffer(stream.getvalue(), dtype=np.uint8)
-        high_res_image = cv2.imdecode(high_res_image, cv2.IMREAD_COLOR)
+        image_max_var = np.frombuffer(stream.getvalue(), dtype=np.uint8)
+        image_max_var = cv2.imdecode(image_max_var, cv2.IMREAD_COLOR)
 
-        # Create directories for different objectives and save image with date and time
+        # Capture the second image at second highest variance position
+        adjust_steps = self.z - second_max_z
+        if adjust_steps > 0:
+            self.movezanticlock(adjust_steps)
+        else:
+            self.movezclock(abs(adjust_steps))
+        sleep(2)
+        self.camera.resolution = (1920, 1080)
+        stream = io.BytesIO()
+        self.camera.capture(stream, format='jpeg')
+        stream.seek(0)
+        image_second_var = np.frombuffer(stream.getvalue(), dtype=np.uint8)
+        image_second_var = cv2.imdecode(image_second_var, cv2.IMREAD_COLOR)
+
+        # Capture the third image at the stopping position
+        sleep(2)
+        self.camera.resolution = (1920, 1080)
+        stream = io.BytesIO()
+        self.camera.capture(stream, format='jpeg')
+        stream.seek(0)
+        image_third_var = np.frombuffer(stream.getvalue(), dtype=np.uint8)
+        image_third_var = cv2.imdecode(image_third_var, cv2.IMREAD_COLOR)
+
+        # Perform focus stacking
+        images = [image_max_var, image_second_var, image_third_var]
+        stacked_image = self.focus_stacking(images)
+
+        # Save the final focused image
         base_dir = "/home/pi/Downloads/autoscan"
         objective_dir = os.path.join(base_dir, f"{obj_value}X")
         os.makedirs(objective_dir, exist_ok=True)
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_path = os.path.join(objective_dir, f"focusedimage_{current_time}.jpg")
-        cv2.imwrite(image_path, high_res_image)
+        cv2.imwrite(image_path, stacked_image)
         
         sleep(2)
         print(variances)
@@ -120,12 +151,30 @@ class Autofocus:
         print(max_z)
         print(max_variance)
 
+    def focus_stacking(self, images):
+        # Convert images to grayscale
+        gray_images = [cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) for img in images]
+
+        # Calculate the sharpness (Laplacian variance) of each pixel
+        sharpness = np.stack([cv2.Laplacian(img, cv2.CV_64F) for img in gray_images], axis=-1)
+        max_sharpness_index = np.argmax(sharpness, axis=-1)
+
+        # Create an empty image for the focus-stacked result
+        stacked_image = np.zeros_like(images[0])
+
+        # For each pixel, choose the value from the image with the highest sharpness
+        for i in range(stacked_image.shape[0]):
+            for j in range(stacked_image.shape[1]):
+                stacked_image[i, j] = images[max_sharpness_index[i, j]][i, j]
+
+        return stacked_image
+
 if __name__ == "__main__":
     af = Autofocus()
     
     af.movezclock(20000)
     
-    print("Please enter the Objective value 4 ,10 or 40")
+    print("Please enter the Objective value 4, 10, or 40")
     in_obj = int(input())
     
     if in_obj == 4:
@@ -133,10 +182,8 @@ if __name__ == "__main__":
     elif in_obj == 10:
         af.movezanticlock(13750)
         sleep(17)
-     
-    ## 12_july 40X acode added
     elif in_obj == 40:
-            af.movezanticlock(16650) # delay was given for 10X 
-            sleep(22) # delay of ack_from Motor
+        af.movezanticlock(16650)
+        sleep(22)
     af.auto(in_obj)
 
